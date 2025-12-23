@@ -34,7 +34,7 @@ def winddir(windd):
     w = 0
     while w < 361:
         if windd < 23:
-            return w
+            return w % 360
         else:
             windd -= 45
             w += 45
