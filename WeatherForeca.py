@@ -1,7 +1,7 @@
 ﻿# -*- coding: UTF-8 -*-
-# version: 23/12/2025
+# version: 24/12/2025
 # author: Vasiliks
-# ver 0.1
+# ver 0.2 fix error in the absence of internet
 import json
 import os
 from datetime import datetime
@@ -17,11 +17,10 @@ from Tools.Directories import fileExists
 temperature_unit = {'c': "°C", 'f': "°F"}
 
 json_file = "/tmp/foreca2.json"
-time_update = 30
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 OPR/125.0.0.0'}
 
 def write_log(value):
-    with open("/tmp/m.log", 'a') as f:
+    with open("/tmp/wf.log", 'a') as f:
         f.write(f'{value}\n')
 
 def wind_speed(windspeed):
@@ -45,38 +44,40 @@ def pressure(pres):
     if not un:
         un = "mmhg"
     tab = {"inhg": 0.0295, "mmhg": 0.75, "hPa": 1}
-    
-    return round(float(p) * tab.get(un, 0.75)),un  
+    return round(float(p) * tab.get(un, 0.75)),un
 
 
 def request_url(url, values={}, timeout=None, headers=HEADERS):
-    retval = None
-    data = None
+    retval = ""
     try:
         req = Request(url, None, headers)
         resp = urlopen(req, timeout=timeout)
         retval = resp.read().decode()
-
     except Exception as err:
         print("Error request: [%s] to url: [%s] with parametrs: [%s]" % (err, url, values))
     return retval
 
 
 def get_json(id):
-    API = "https://api.foreca.net/data/{}/{}.json"
-    url = API.format("recent", id)
-    data = request_url(url)
-    c = json.loads(data).get(id)
-    url = API.format("favorites", id)
-    data = request_url(url)
-    c["for10days"] = json.loads(data).get(id)
-    url2 = "https://data.forecabox.com/daily/{}.json?lang=ru".format(id)
-    img_data = request_url(url2)
-    data = json.loads(img_data)
-    data.pop("daily", None)
-    data.pop("nowcast", None)
+    try:
+        API = "https://api.foreca.net/data/{}/{}.json"
+        url = API.format("recent", id)
+        data = request_url(url)
+        c = json.loads(data).get(id)
+        url = API.format("favorites", id)
+        data = request_url(url)
+        c["for10days"] = json.loads(data).get(id)
+        url2 = "https://data.forecabox.com/daily/{}.json?lang=ru".format(id)
+        img_data = request_url(url2)
+        data = json.loads(img_data)
+        data.pop("daily", None)
+        data.pop("nowcast", None)
+        rez = {**data, **c}
+    except:
+        rez = ""
+
     with open(json_file, 'w', encoding='utf-8') as f:
-        f.write(json.dumps({**data, **c}, ensure_ascii=False, sort_keys=False, indent=2))
+        f.write(json.dumps(rez, ensure_ascii=False, sort_keys=False, indent=2))
 
 
 class WeatherForeca(Poll, Converter, object):
@@ -89,6 +90,7 @@ class WeatherForeca(Poll, Converter, object):
         self.type = type
         self.poll_interval = 1000
         self.poll_enabled = True
+        self.time_update = 30
 
     def T(self, t):
         key = self.fix.lower()
@@ -107,14 +109,18 @@ class WeatherForeca(Poll, Converter, object):
         except AttributeError:
             id = "103169070"
         if fileExists(json_file):
-            if int((time() - os.stat(json_file).st_mtime)/60) >= time_update:
+            if int((time() - os.stat(json_file).st_mtime)/60) >= self.time_update:
                 get_json(id)
         else:
             get_json(id)
-
         with open(json_file, "r") as f:
             d = f.read()
         weather_data = json.loads(d)
+        if isinstance(weather_data, dict) and weather_data:
+            self.time_update = 30
+        else:
+            self.time_update = 5
+            return "n/a"
 
 # ####  10 day weather  #####
         if self.type[-1].isdigit():
